@@ -1,0 +1,48 @@
+% Example résumé for the FAKE applicant "Jane Doe". Replace everything with your own content.
+% tailor.py rewrites only:
+%   - the item bullets from the WORK EXPERIENCE section down to the skills input line
+%   - skills.tex
+% The line right before each \begin{itemize} is used as that block's heading.
+\documentclass[10pt,letterpaper]{article}
+\usepackage[margin=0.5in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlist[itemize]{leftmargin=0.25in, itemsep=1pt, topsep=1pt}
+\newcommand{\entry}[4]{\textbf{#1} \hfill #2\\ \textit{#3} \hfill #4\par}
+
+\begin{document}
+
+\begin{center}
+  {\Large\bfseries Jane Doe}\\[2pt]
+  jane.doe@example.com $|$ 555-010-0000 $|$
+  \href{https://github.com/example-jane-doe}{github.com/example-jane-doe}
+\end{center}
+
+\section*{EDUCATION}
+\entry{Springfield State University}{Springfield, IL}{B.S. Computer Science}{May 2028}
+
+\section*{WORK EXPERIENCE}
+\entry{Example Analytics Co.}{Chicago, IL}{Software Engineering Intern}{May 2026 - Aug 2026}
+\begin{itemize}
+  \item Built an internal REST service in Go that replaced a nightly batch job, cutting report latency from 24 hours to 5 minutes.
+  \item Added integration tests and CI checks for the service, raising test coverage to 80\%.
+\end{itemize}
+
+\entry{Springfield State University}{Springfield, IL}{Teaching Assistant, Data Structures}{Jan 2026 - Present}
+\begin{itemize}
+  \item Taught weekly recitations on data structures for 40 undergraduate students.
+  \item Wrote autograder tests in Python for 6 programming assignments.
+\end{itemize}
+
+\section*{PROJECTS}
+\entry{Example KV Store}{}{Personal project}{2025}
+\begin{itemize}
+  \item Wrote a key-value store in Rust with a write-ahead log and crash recovery.
+\end{itemize}
+
+\input{skills.tex}
+
+\end{document}

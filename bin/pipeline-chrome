@@ -1,0 +1,305 @@
+#!/bin/bash
+# pipeline-chrome — launch an ISOLATED, HEADED Chrome instance for the job-application
+# pipeline. A separate --user-data-dir means separate cookies, history, extensions and
+# windows from your personal Chrome; both can run at the same time.
+#
+#   pipeline-chrome              start it headed (pipeline default; no-op if already up)
+#   pipeline-chrome --headless   start with no window — DO NOT use for applying: headless
+#                                Chrome announces itself (UA, navigator.webdriver, no WebGL)
+#                                and is what ATS bot walls flag
+#   pipeline-chrome status       is it running?
+#   pipeline-chrome stop         quit it AND reap agent-browser daemons
+#   pipeline-chrome reap         reap agent-browser daemons only (leave Chrome up)
+#   pipeline-chrome <url ...>    start it and open these URLs
+#
+# Per-applier instances: two appliers sharing one Chrome keep stealing each other's tab
+# pointer. `--instance N` (or PIPELINE_CHROME_INSTANCE=N), N = 1..9, is a fully separate Chrome:
+#   profile  $PIPELINE_HOME/browser/chrome-profile-N   (seeded from the base profile)
+#   CDP      9222+N                                     (applier1 -> 9223, applier2 -> 9224)
+#   session  applierN — `stop`/`reap` on an instance touch ONLY that daemon
+# The base instance (no --instance) uses CDP 9222.
+#
+#   pipeline-chrome -i 1 start   start instance 1 (seeds its profile on first use)
+#   pipeline-chrome -i 1 reseed  re-copy sign-ins/cookies from the base profile (both stopped)
+#   pipeline-chrome status --all every instance
+#   pipeline-chrome stop --all   stop every instance and reap every daemon
+#
+# Environment: PIPELINE_HOME (default ~/.job-pipeline), PIPELINE_CHROME_BIN (browser binary),
+# PIPELINE_CHROME_PROFILE / PIPELINE_CHROME_CDP_PORT (overrides), PIPELINE_CHROME_FRESH=1
+# (start an instance with an empty profile), AGENT_BROWSER (agent-browser CLI path).
+# Never touches your personal Chrome profile.
+set -euo pipefail
+
+PIPELINE_HOME="${PIPELINE_HOME:-$HOME/.job-pipeline}"
+
+# Browser binary: explicit override, else Chrome for Testing from a Playwright install (pinned
+# version, no auto-update, separate app from your daily Chrome), else regular Chrome/Chromium.
+find_chrome() {
+  [ -n "${PIPELINE_CHROME_BIN:-}" ] && { echo "$PIPELINE_CHROME_BIN"; return; }
+  local c
+  for c in "$HOME"/Library/Caches/ms-playwright/chromium-*/chrome-mac*/"Google Chrome for Testing.app"/Contents/MacOS/"Google Chrome for Testing" \
+           "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux*/chrome \
+           "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+           "$(command -v google-chrome 2>/dev/null || true)" \
+           "$(command -v chromium 2>/dev/null || true)"; do
+    [ -n "$c" ] && [ -x "$c" ] && { echo "$c"; return; }
+  done
+  echo ""
+}
+CHROME="$(find_chrome)"
+BROWSER_DIR="$PIPELINE_HOME/browser"
+BASE_PROFILE="$BROWSER_DIR/chrome-profile"
+BASE_PORT=9222
+
+# portable in-place sed (BSD vs GNU)
+sed_i() { if sed --version >/dev/null 2>&1; then sed -i "$@"; else sed -i '' "$@"; fi; }
+
+INSTANCE="${PIPELINE_CHROME_INSTANCE:-}"
+HEADLESS=""
+ALL=""
+ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --headless) HEADLESS="--headless=new --disable-gpu" ;;
+    --all) ALL=1 ;;
+    -i|--instance) INSTANCE="${2:-}"; shift ;;
+    --instance=*) INSTANCE="${1#--instance=}" ;;
+    *) ARGS+=("$1") ;;
+  esac
+  shift
+done
+set -- "${ARGS[@]:-start}"
+
+if [ -n "$INSTANCE" ]; then
+  [[ "$INSTANCE" =~ ^[1-9]$ ]] || { echo "pipeline-chrome: --instance must be 1..9 (got '$INSTANCE')" >&2; exit 2; }
+  PROFILE="${PIPELINE_CHROME_PROFILE:-$BASE_PROFILE-$INSTANCE}"
+  CDP_PORT="${PIPELINE_CHROME_CDP_PORT:-$((BASE_PORT + INSTANCE))}"
+  LOG="$BROWSER_DIR/logs/chrome-$INSTANCE.log"
+  LABEL="instance $INSTANCE"
+else
+  PROFILE="${PIPELINE_CHROME_PROFILE:-$BASE_PROFILE}"
+  CDP_PORT="${PIPELINE_CHROME_CDP_PORT:-$BASE_PORT}"
+  LOG="$BROWSER_DIR/logs/chrome.log"
+  LABEL="base"
+fi
+PIDFILE="$PROFILE/.pipeline-chrome.pid"
+
+[ -n "$CHROME" ] && [ -x "$CHROME" ] || { echo "pipeline-chrome: no Chrome found — set PIPELINE_CHROME_BIN" >&2; exit 1; }
+
+pid_running() {  # $1 = pidfile
+  [ -f "$1" ] || return 1
+  local pid; pid=$(cat "$1" 2>/dev/null) || return 1
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+# The pidfile alone has lied: `stop` removed it while Chrome ignored SIGTERM
+# for ~20 min, and the next `start` silently re-attached to that zombie. Also match any
+# live process launched on this exact profile dir (trailing space: -1 isn't a prefix hit).
+profile_pids() { pgrep -f -- "--user-data-dir=$1 " 2>/dev/null || true; }
+is_running() { pid_running "$PIDFILE" || [ -n "$(profile_pids "$PROFILE")" ]; }
+main_pid() {  # $1 = profile dir — the pidfile's pid if alive, else the oldest matching process
+  if pid_running "$1/.pipeline-chrome.pid"; then cat "$1/.pipeline-chrome.pid"
+  else pgrep -o -f -- "--user-data-dir=$1 " 2>/dev/null || true; fi
+}
+
+# SIGTERM, wait up to 10 s, then SIGKILL. Only reports stopped once the process is gone.
+kill_profile() {  # $1 = profile dir
+  local pids; pids="$( { cat "$1/.pipeline-chrome.pid" 2>/dev/null; profile_pids "$1"; } | sort -u | tr '\n' ' ')"
+  [ -n "${pids// /}" ] || return 1
+  kill $pids 2>/dev/null || true
+  for _ in $(seq 1 50); do
+    [ -z "$(profile_pids "$1")" ] && break
+    sleep 0.2
+  done
+  if [ -n "$(profile_pids "$1")" ]; then
+    kill -9 $(profile_pids "$1") 2>/dev/null || true
+    sleep 1
+    echo "  (Chrome ignored SIGTERM — force-killed)"
+  fi
+  rm -f "$1/.pipeline-chrome.pid"
+  return 0
+}
+
+# agent-browser runs ONE daemon per session (AGENT_BROWSER_SESSION), each with its
+# own <session>.pid/.sock here. The daemon has no idle timeout: only `agent-browser
+# close` makes it exit. Killing Chrome leaves every daemon behind, which is how the
+# pipeline used to orphan processes every run. Reap them all by session.
+AB_DIR="${AGENT_BROWSER_SOCKET_DIR:-${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/agent-browser}}"
+AB_DIR="${AB_DIR:-$HOME/.agent-browser}"
+AGENT_BROWSER="${AGENT_BROWSER:-agent-browser}"
+
+reap_daemons() {  # optional $1 = only this session name
+  [ -d "$AB_DIR" ] || return 0
+  local only="${1:-}" reaped=0 stale=0 f session pid
+  for f in "$AB_DIR"/*.pid; do
+    [ -e "$f" ] || continue          # no matches: glob stayed literal
+    session=$(basename "$f" .pid)
+    [ -n "$only" ] && [ "$session" != "$only" ] && continue
+    pid=$(cat "$f" 2>/dev/null || true)
+
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      # Graceful first: `close` shuts the daemon down and cleans its own files.
+      AGENT_BROWSER_SESSION="$session" "$AGENT_BROWSER" close >/dev/null 2>&1 || true
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.2
+      done
+      if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true          # SIGTERM: daemon traps it and exits 0
+        sleep 0.5
+        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+      fi
+      echo "  reaped agent-browser daemon '$session' (pid $pid)"
+      reaped=$((reaped + 1))
+    else
+      stale=$((stale + 1))
+    fi
+    rm -f "$AB_DIR/$session.pid" "$AB_DIR/$session.sock" \
+          "$AB_DIR/$session.port" "$AB_DIR/$session.stream-port" 2>/dev/null || true
+  done
+  [ "$stale" -gt 0 ] && echo "  cleared $stale stale daemon file set(s)"
+  [ "$reaped" -eq 0 ] && [ "$stale" -eq 0 ] && echo "  no agent-browser daemons to reap${only:+ for '$only'}"
+  return 0
+}
+
+# Copy the base profile's sign-ins (Google, ATS cookies, Local State with the cookie
+# key) into an instance profile. Same browser app -> same OS keychain key, so cookies decrypt.
+# Caches are skipped (most of the size). Refuses while either Chrome is running: a live
+# Cookies/Login Data SQLite file can be copied mid-write.
+seed_profile() {
+  if pid_running "$BASE_PROFILE/.pipeline-chrome.pid" || [ -n "$(profile_pids "$BASE_PROFILE")" ]; then
+    echo "pipeline-chrome: base Chrome is running — can't copy its profile safely." >&2
+    echo "  Run 'pipeline-chrome stop' first (check 'challenge.js open' — a human may need its tabs)," >&2
+    echo "  or start with PIPELINE_CHROME_FRESH=1 for an empty profile (no sign-ins)." >&2
+    return 1
+  fi
+  is_running && { echo "pipeline-chrome: $LABEL is running — stop it before reseeding" >&2; return 1; }
+  mkdir -p "$PROFILE"
+  rsync -a --delete \
+    --exclude 'Singleton*' --exclude '.pipeline-chrome.pid' --exclude 'RunningChromeVersion' \
+    --exclude 'Cache/' --exclude 'Code Cache/' --exclude 'GPUCache/' --exclude 'DawnCache/' \
+    --exclude 'GraphiteDawnCache/' --exclude 'GrShaderCache/' --exclude 'ShaderCache/' \
+    --exclude 'component_crx_cache/' --exclude 'extensions_crx_cache/' \
+    --exclude 'BrowserMetrics*' --exclude 'Crashpad/' --exclude 'Sessions/' \
+    "$BASE_PROFILE/" "$PROFILE/"
+  date '+%Y-%m-%d %H:%M' > "$PROFILE/.pipeline-seeded-from-base"
+  echo "  seeded $PROFILE from base profile ($(du -sh "$PROFILE" | cut -f1))"
+}
+
+label_of() { if [ -n "$1" ]; then echo "instance $1"; else echo base; fi; }
+
+instance_profiles() {  # base first, then every numbered instance that exists
+  echo "$BASE_PROFILE|"
+  local d n
+  for d in "$BASE_PROFILE"-[1-9]; do
+    [ -d "$d" ] || continue
+    n="${d##*-}"
+    echo "$d|$n"
+  done
+}
+
+case "${1:-start}" in
+  status)
+    if [ -n "$ALL" ]; then
+      any=1
+      while IFS='|' read -r prof n; do
+        port=$((BASE_PORT + ${n:-0}))
+        if pid_running "$prof/.pipeline-chrome.pid" || [ -n "$(profile_pids "$prof")" ]; then
+          echo "$(label_of "$n"): running (pid $(main_pid "$prof"), CDP $port)"
+          any=0
+        else
+          echo "$(label_of "$n"): stopped"
+        fi
+      done < <(instance_profiles)
+      exit $any
+    fi
+    if is_running; then
+      echo "running (pid $(main_pid "$PROFILE"), CDP http://127.0.0.1:$CDP_PORT, profile $PROFILE)"
+    else
+      echo "stopped"; exit 1
+    fi
+    ;;
+  stop)
+    if [ -n "$ALL" ]; then
+      while IFS='|' read -r prof n; do
+        if kill_profile "$prof"; then
+          echo "pipeline-chrome: stopped $(label_of "$n")"
+        fi
+      done < <(instance_profiles)
+      echo "pipeline-chrome: all pipeline instances stopped (personal Chrome untouched)"
+      reap_daemons
+      exit 0
+    fi
+    if kill_profile "$PROFILE"; then
+      echo "pipeline-chrome: stopped $LABEL (personal Chrome untouched)"
+    else
+      echo "pipeline-chrome: $LABEL not running"
+    fi
+    # Always reap: daemons outlive Chrome and are the pipeline's per-run leak.
+    # An instance reaps only its own applier's daemon; base reaps everything (legacy).
+    if [ -n "$INSTANCE" ]; then reap_daemons "applier$INSTANCE"; else reap_daemons; fi
+    ;;
+  reap)
+    if [ -n "$INSTANCE" ]; then reap_daemons "applier$INSTANCE"; else reap_daemons; fi
+    ;;
+  reseed)
+    [ -n "$INSTANCE" ] || { echo "pipeline-chrome: reseed needs --instance N" >&2; exit 2; }
+    seed_profile
+    ;;
+  start|*)
+    [ "${1:-}" = "start" ] && shift || true
+    mkdir -p "$(dirname "$LOG")"
+    if is_running; then
+      echo "pipeline-chrome: $LABEL already running (pid $(main_pid "$PROFILE"), CDP port $CDP_PORT)"
+      [ $# -gt 0 ] && "$CHROME" --user-data-dir="$PROFILE" "$@" >>"$LOG" 2>&1 &
+      exit 0
+    fi
+    if [ -n "$INSTANCE" ] && [ ! -d "$PROFILE/Default" ]; then
+      if [ -n "${PIPELINE_CHROME_FRESH:-}" ]; then
+        echo "  $LABEL: starting with an EMPTY profile (PIPELINE_CHROME_FRESH) — no sign-ins"
+      else
+        seed_profile
+      fi
+    fi
+    mkdir -p "$PROFILE"
+    # A pipeline Chrome must start EMPTY. A killed/crashed Chrome restores every old tab from
+    # Default/Sessions on the next start, and dozens of stale tabs make it unresponsive. Tabs only matter while Chrome is alive (challenges are
+    # handed off in a running browser), so drop the session files and mark the exit clean.
+    [ -f "$PROFILE/Default/Preferences" ] && \
+      sed_i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' "$PROFILE/Default/Preferences" 2>/dev/null || true
+    rm -rf "$PROFILE/Default/Sessions" 2>/dev/null || true
+    # Stagger instance windows so they don't sit exactly on top of each other.
+    OFFSET=$(( ${INSTANCE:-0} * 60 ))
+    # shellcheck disable=SC2086
+    nohup "$CHROME" \
+      $HEADLESS \
+      --user-data-dir="$PROFILE" \
+      --remote-debugging-port="$CDP_PORT" \
+      --remote-allow-origins=* \
+      --no-first-run \
+      --no-default-browser-check \
+      --disable-background-networking \
+      --disable-sync \
+      --disable-translate \
+      --disable-features=TranslateUI \
+      --window-size=1440,900 \
+      --window-position=$OFFSET,$OFFSET \
+      --disable-backgrounding-occluded-windows \
+      --disable-renderer-backgrounding \
+      --disable-background-timer-throttling \
+      "${@:-about:blank}" >>"$LOG" 2>&1 &
+    echo $! > "$PIDFILE"
+    # Headed Chrome can freeze (clicks/screenshots hang) while a Mac's display sleeps. Keep display + system awake for exactly as long
+    # as this Chrome lives; caffeinate -w exits by itself when Chrome does.
+    [ -z "$HEADLESS" ] && command -v caffeinate >/dev/null && \
+      nohup caffeinate -d -i -w "$(cat "$PIDFILE")" >/dev/null 2>&1 &
+    sleep 2
+    if is_running; then
+      echo "pipeline-chrome: started $LABEL (pid $(cat "$PIDFILE"))${HEADLESS:+ [headless]}"
+      echo "  profile:  $PROFILE"
+      echo "  CDP:      http://127.0.0.1:$CDP_PORT"
+      echo "  log:      $LOG"
+    else
+      echo "pipeline-chrome: $LABEL failed to start — see $LOG" >&2; exit 1
+    fi
+    ;;
+esac

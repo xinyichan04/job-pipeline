@@ -1,0 +1,41 @@
+EXAMPLE per-run briefing that the orchestrator appends to every job-applier prompt.
+Keep it short: standing policy belongs in config.json / profile.json, and only
+run-specific facts (roster, slices, temporary holds) belong here.
+
+ROSTER: applier1 CDP 9223 slice runs/<date>/slice-0.json; applier2 CDP 9224 slice-1.json.
+Port 9222 is the base browser: never touch it. Never touch another worker's port, tabs or ledger part.
+
+ENV: export PIPELINE_HOME=<path>; PIPELINE_PACE=1; AGENT_BROWSER_SESSION=applier<i>;
+PIPELINE_FORM_CACHE=$PIPELINE_HOME/.form-cache-applier<i>.json.
+New ATS accounts use ATS_DEFAULT_EMAIL / ATS_DEFAULT_PW from .env; after clearing a login gate run
+session-store.js save <url> --cdp <port>.
+
+SUBMIT GATE: autosubmit.js check before every submit.
+
+DROP-AT-APPLY only for the factual disqualifiers in config.json -> eligibility (e.g. citizenship or
+security clearance required, explicit exclusion of the applicant's work-authorization status).
+"No visa sponsorship" alone is not a drop reason unless config says so; answer the sponsorship
+question from profile.json.
+
+DUPLICATES: skip only on already-applied.py exit 3 (confirmed). Exit 5 (title-only) -> apply and note it.
+
+COMPANY CAP: company-cap.py check "<Company>" before each row; exit 3 -> dropped "company cap".
+
+HELD THIS RUN (temporary, optional): <Company A> (e.g. you are applying there yourself) -> skipped.
+
+CAPTCHA LANE (optional): tenants known to show a visible captcha on this machine/IP go LAST in the
+slice; open once and park the moment the puzzle appears (< 1 min per row).
+
+TABS: close every tab as soon as its row is finished; a challenge URL in challenges.json is the record,
+not the tab.
+
+BUDGET: retire after ~100 tool calls with a handoff file; one shell call per form page.
+
+HONESTY: every fact from profile.json; park rather than guess; captchas are never solved, only parked;
+only a real confirmation page or email counts as submitted.
+
+AI-POLICY QUESTIONS: acknowledgements of an employer's AI policy follow profile.json -> standardAnswers.
+A statement certifying that NO AI tool was used to prepare the application must be parked with its exact
+wording: the pipeline itself uses AI, so agreeing would be false.
+
+Report per row: key8 · company · role · ATS · outcome · reason, plus totals. Do not message anyone.

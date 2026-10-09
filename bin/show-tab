@@ -1,0 +1,27 @@
+#!/bin/bash
+# show-tab — bring the pipeline browser tab whose URL contains <pattern> to the front,
+# e.g. so a human can clear a parked captcha or sign-in (see scripts/challenge.js).
+#   show-tab <url-substring>
+# Scans the base instance and instances 1-9 (CDP 9222..9231). Window raising uses
+# osascript and only happens on macOS; elsewhere the tab is just activated.
+pat="${1:-}"; [ -z "$pat" ] && { echo "usage: show-tab <url-substring>" >&2; exit 2; }
+PIPELINE_HOME="${PIPELINE_HOME:-$HOME/.job-pipeline}"
+for i in 0 1 2 3 4 5 6 7 8 9; do
+  port=$((9222 + i))
+  hit=$(curl -s -m 2 "localhost:$port/json/list" | python3 -c "
+import json,sys
+p=sys.argv[1]
+for t in json.load(sys.stdin):
+    if t.get('type')=='page' and p in t.get('url',''): print(t['id']); break" "$pat" 2>/dev/null)
+  if [ -n "$hit" ]; then
+    curl -s -m 2 "localhost:$port/json/activate/$hit" >/dev/null
+    if [ "$i" = 0 ]; then prof="$PIPELINE_HOME/browser/chrome-profile"; else prof="$PIPELINE_HOME/browser/chrome-profile-$i"; fi
+    pid=$(cat "$prof/.pipeline-chrome.pid" 2>/dev/null)
+    if [ "$(uname)" = Darwin ] && [ -n "$pid" ]; then
+      osascript -e "tell application \"System Events\" to set visible of (first process whose unix id is $pid) to true" \
+                -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" 2>/dev/null
+    fi
+    echo "shown: instance $i (CDP $port) tab $hit"; exit 0
+  fi
+done
+echo "no open tab matches '$pat'" >&2; exit 1

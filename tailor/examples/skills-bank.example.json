@@ -1,0 +1,23 @@
+{
+ "_rule": "Skills the candidate actually has. status 'resume' = always listed; 'evidenced' = named in your own bullets, listed only when a JD asks for it. 'lex' is the lexicon.json key (string or list). Optional 'aliases' adds a bank-only skill the lexicon does not know. tailor.py never lists a skill outside this file unless tailor.add_unlisted_jd_skills is true.",
+ "rows": {
+  "programming": [
+   {"display": "Python", "status": "resume", "lex": "python"},
+   {"display": "Go", "status": "resume", "lex": "go"},
+   {"display": "Java", "status": "resume", "lex": "java"},
+   {"display": "SQL", "status": "resume", "lex": "sql"},
+   {"display": "Rust", "status": "resume", "lex": "rust"},
+   {"display": "Bash", "status": "evidenced", "lex": "bash"}
+  ],
+  "technologies": [
+   {"display": "Docker", "status": "resume", "lex": "docker"},
+   {"display": "PostgreSQL", "status": "resume", "lex": "postgresql"},
+   {"display": "Linux", "status": "resume", "lex": "linux"},
+   {"display": "Git", "status": "resume", "lex": "git"},
+   {"display": "REST APIs", "status": "evidenced", "lex": "rest api"},
+   {"display": "CI/CD", "status": "evidenced", "lex": "ci-cd"},
+   {"display": "Write-Ahead Logging", "status": "evidenced", "aliases": ["write-ahead log", "write-ahead logging", "WAL"]}
+  ]
+ },
+ "languages_spoken": "English (native), Spanish (fluent)"
+}

@@ -1,0 +1,9 @@
+{
+ "_comment": "Extra facts about each role that are TRUE but not on the résumé. Only entries with confirmed=true are ever offered to the bullet rewriter. 'heading' must be a substring of the résumé heading line for that role. Move any clause from inferred_used that you do not accept into vetoed; it will never be claimed again.",
+ "entries": [
+  {"id": "ex1", "heading": "Example Analytics Co.", "confirmed": true, "fact": "added request metrics and an alert for failed jobs"},
+  {"id": "ex2", "heading": "Example KV Store", "confirmed": true, "fact": "benchmarked reads and writes with a load-test script"}
+ ],
+ "vetoed": [],
+ "inferred_used": []
+}

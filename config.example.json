@@ -1,0 +1,106 @@
+{
+  "_comment": "Pipeline policy. Copy to $PIPELINE_HOME/config.json and edit. Missing keys fall back to this file. Applicant FACTS (name, education, work authorization answers) live in profile.json, not here.",
+
+  "mail": {
+    "_comment": "IMAP mailboxes, searched in order. Each entry names the .env keys holding the address and an app-specific secret. The first one is where job-list emails, ATS codes and confirmations arrive.",
+    "imap_host": "imap.gmail.com",
+    "folder": "[Gmail]/All Mail",
+    "extra_folders": ["[Gmail]/Spam", "[Gmail]/Trash"],
+    "mailboxes": [
+      { "address_env": "MAIL_ADDRESS", "secret_env": "MAIL_APP_PW" }
+    ]
+  },
+
+  "swelist": {
+    "_comment": "Daily job-list email source (SWE List / Simplify digest). Posting links point at simplify.jobs/p/<id>.",
+    "sender": "noreply@swelist.com",
+    "subject": "New Internships Posted Today",
+    "top_n": 10,
+    "lookback_days": 3
+  },
+
+  "eligibility": {
+    "_comment": "Deterministic prescreen rules applied to the feed's structured fields. Never drop on an unstated value.",
+    "degree_codes_ok": [1],
+    "degree_names": { "1": "Bachelor's", "2": "Master's", "3": "MBA", "4": "JD", "5": "PhD" },
+    "earliest_term": [2027, 2],
+    "extra_terms_ok": [[2026, 1], [2027, 1]],
+    "allowed_countries": ["US"],
+    "drop_outside_allowed_countries": false,
+    "ineligible_companies": {
+      "example corp": "reason this company is excluded company-wide"
+    },
+    "defense_itar_companies": [
+      "spacex", "anduril", "lockheed martin", "northrop grumman", "raytheon", "rtx",
+      "general dynamics", "l3harris", "bae systems", "leidos", "saic",
+      "booz allen hamilton", "mitre", "blue origin"
+    ],
+    "block_defense_itar": false,
+    "block_clearance_required": true
+  },
+
+  "roles": {
+    "_comment": "Title-based role filters used by role-tier.py and next-batch.js.",
+    "internship_only": true,
+    "exclude_hardware_ece": true,
+    "exclude_analytics": true,
+    "include_quant": true,
+    "include_research": true,
+    "near_duplicate_family_max": 2
+  },
+
+  "caps": {
+    "_comment": "per_company_submitted: hard cap on SUBMITTED applications per company across all runs (company-cap.py). per_run_default/overrides: how many roles per company role-tier.py keeps in one batch.",
+    "per_company_submitted": 5,
+    "per_run_default": 5,
+    "per_run_overrides": {
+      "TikTok": 2,
+      "ByteDance": 2,
+      "Coinbase": 3
+    }
+  },
+
+  "queue": {
+    "_comment": "held_companies: never handed to an applier (e.g. companies you apply to yourself). top_list_expiry_days: how long a digest's top-N list holds companies back when hold_top_list is true.",
+    "held_companies": [],
+    "hold_top_list": false,
+    "top_list_expiry_days": 21,
+    "fuzzy_match_threshold": 0.75
+  },
+
+  "apply": {
+    "_comment": "Applier behaviour. The submit gate itself is the AUTOSUBMIT file under PIPELINE_HOME (see autosubmit.js), not this config.",
+    "timebox_target_min": 7,
+    "timebox_hard_min": 15,
+    "max_tabs": 6,
+    "max_challenge_tabs": 2,
+    "retire_after_tool_calls": 100,
+    "no_em_dashes": true
+  },
+
+  "tailor": {
+    "_comment": "Résumé tailoring (tailor/tailor.py). resume_repo is a git repo holding resume.tex, skills.tex, skills-bank.json and optionally experience-bank.json. llm_cmd receives the prompt on stdin and must print JSON {\"result\": \"...\"} (the default is the Claude Code CLI). add_unlisted_jd_skills=false means only skills in YOUR skills bank are ever placed on the résumé.",
+    "resume_repo": "~/resume",
+    "pdf_name": "Resume.pdf",
+    "out_dir": "/tmp/job-pipeline-tailored",
+    "tracks": ["swe", "infra", "ai", "finance"],
+    "rewrite_bullets": true,
+    "llm_cmd": ["claude", "-p", "--model", "opus", "--output-format", "json"],
+    "add_unlisted_jd_skills": false,
+    "push_branches": false,
+    "git_author_name": "",
+    "git_author_email": ""
+  },
+
+  "browser": {
+    "_comment": "Isolated, HEADED Chrome per applier (bin/pipeline-chrome). Instance N listens on base_cdp_port+N.",
+    "chrome_bin": "",
+    "profile_root": "~/.job-pipeline/browser",
+    "base_cdp_port": 9222
+  },
+
+  "notify": {
+    "_comment": "Shell command that receives operator messages on stdin (Slack/Discord webhook script, mail, ...). Empty = print to stderr. NOTIFY_CMD in .env overrides.",
+    "command": ""
+  }
+}

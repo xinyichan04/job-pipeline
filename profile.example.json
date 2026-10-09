@@ -1,0 +1,126 @@
+{
+  "_comment": "FAKE example applicant. Copy to $PIPELINE_HOME/profile.json and replace every value with your own. This file is the single source of truth for every fact typed into an application: agents may select, reorder and phrase these facts, never invent new ones. A question whose answer is not here must be PARKED for you to answer.",
+
+  "contact": {
+    "legalName": "Jane Q. Doe",
+    "firstName": "Jane",
+    "lastName": "Doe",
+    "preferredName": "Jane",
+    "email": "jane.doe@example.com",
+    "phone": "555-010-0000",
+    "address": "123 Example Street, Springfield, IL 62701, United States",
+    "street": "123 Example Street",
+    "city": "Springfield",
+    "state": "IL",
+    "postalCode": "62701",
+    "country": "United States",
+    "currentLocation": "Springfield, IL, United States",
+    "linkedin": "https://www.linkedin.com/in/example-jane-doe/",
+    "github": "https://github.com/example-jane-doe",
+    "website": ""
+  },
+
+  "experiences": [
+    {
+      "company": "Example Analytics Co.",
+      "title": "Software Engineering Intern",
+      "location": "Chicago, IL",
+      "start": "2026-05",
+      "end": "2026-08",
+      "current": false,
+      "description": "Built an internal REST service in Go that replaced a nightly batch job.\nAdded integration tests and CI checks for the service."
+    },
+    {
+      "company": "Springfield State University",
+      "title": "Teaching Assistant, Data Structures",
+      "location": "Springfield, IL",
+      "locationOptional": "omit",
+      "start": "2026-01",
+      "end": null,
+      "current": true,
+      "description": "Teaching Assistant for an undergraduate data structures course."
+    }
+  ],
+
+  "projects": [
+    {
+      "name": "Example Project",
+      "description": "A small key-value store written in Rust with a write-ahead log."
+    }
+  ],
+
+  "education": [
+    {
+      "school": "Springfield State University",
+      "degree": "B.S.",
+      "degreeLevel": "Bachelor's",
+      "field": "Computer Science",
+      "location": "Springfield, IL",
+      "start": "2024-08",
+      "end": "2028-05",
+      "expected": true,
+      "gpa": "3.5",
+      "gpaPolicy": "fill only when the GPA field is required",
+      "coursework": ["Data Structures", "Algorithms", "Operating Systems (in progress)"]
+    }
+  ],
+
+  "languages": [
+    { "language": "English", "level": "native" },
+    { "language": "Spanish", "level": "fluent" }
+  ],
+
+  "skills": {
+    "programming": ["Python", "Go", "Java", "SQL"],
+    "technologies": ["Docker", "PostgreSQL", "Linux", "Git"]
+  },
+
+  "workAuthorization": {
+    "_comment": "Answer each question exactly as asked. These are examples, not advice: fill in your real situation.",
+    "authorizedToWork": { "US": "Yes" },
+    "requiresSponsorshipNow": { "US": "No" },
+    "requiresSponsorshipFuture": { "US": "No" },
+    "citizenshipOrClearanceRoles": "not eligible"
+  },
+
+  "eeo": {
+    "_comment": "Voluntary self-identification. 'Decline to answer' is always an acceptable choice.",
+    "gender": "Decline to answer",
+    "race": "Decline to answer",
+    "veteran": "I am not a protected veteran",
+    "disability": "No, I do not have a disability"
+  },
+
+  "howDidYouHear": {
+    "dropdownPrefs": ["Company Website", "Careers Site", "[Company] Website"],
+    "never": [],
+    "freeText": "I found the posting on your website.",
+    "referral": "none"
+  },
+
+  "locationPreference": {
+    "ranked": ["New York, NY", "San Francisco Bay Area", "Chicago, IL"],
+    "fallback": "prefer a major city over suburban/rural sites",
+    "multiSelect": "tick all acceptable locations, preferred ones first/primary"
+  },
+
+  "standardAnswers": {
+    "_comment": "Routine screening questions with an obvious answer. Anything not covered here or elsewhere in this file is PARKED for a human.",
+    "willingToRelocate": "Yes",
+    "over18": "Yes",
+    "previouslyEmployedHere": "No",
+    "relativesEmployedHere": "No",
+    "nonCompete": "No",
+    "aiPolicyAcknowledgement": "Agree",
+    "earliestStart": "May 2027",
+    "internshipTerms": ["Summer 2027"]
+  },
+
+  "neverWrite": [
+    "_comment: facts that must never appear on a form, e.g. a course listed on the résumé that is still in progress must be written as '(in progress)'."
+  ],
+
+  "writingSample": "Optional: a short paragraph in your own voice. Essay-writing subagents match its tone and structure.",
+
+  "writingStyle": "no em dashes or spaced en dashes in typed text; use commas, periods, colons or parentheses"
+}

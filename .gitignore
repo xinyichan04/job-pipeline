@@ -1,0 +1,39 @@
+# Personal data and secrets: never commit
+.env
+.env.*
+!.env.example
+profile.json
+config.json
+*.pdf
+*.eml
+
+# Runtime state (normally under $PIPELINE_HOME, ignored here in case it is set to the repo)
+runs/
+sessions/
+browser/
+ledger*.md
+challenges.json
+CARRYOVER.json
+TOP10.json
+AUTOSUBMIT
+QUIET
+BATCH_DM
+issues.jsonl
+.form-cache*.json
+.gh-state*.json
+.swelist-triggered
+swelist-digest/
+state.json
+*.lock
+
+# Tailor build output
+tailor/build/
+build/
+
+# Tooling
+__pycache__/
+*.pyc
+node_modules/
+.DS_Store
+*.bak
+*.bak-*
